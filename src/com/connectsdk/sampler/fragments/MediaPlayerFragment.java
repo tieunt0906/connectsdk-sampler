@@ -11,17 +11,26 @@
 
 package com.connectsdk.sampler.fragments;
 
+import static android.app.Activity.RESULT_OK;
+
+import android.Manifest;
 import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.ViewGroup;
+import android.webkit.MimeTypeMap;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -29,6 +38,12 @@ import android.widget.ImageView;
 import android.widget.SeekBar;
 import android.widget.SeekBar.OnSeekBarChangeListener;
 import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import com.connectsdk.core.MediaInfo;
 import com.connectsdk.core.SubtitleInfo;
@@ -214,7 +229,7 @@ public class MediaPlayerFragment extends BaseFragment {
 
                 @Override
                 public void onClick(View view) {
-                    showImage();
+                    requestPermissionAndOpenGallery();
                 }
             });
         }
@@ -378,22 +393,78 @@ public class MediaPlayerFragment extends BaseFragment {
         });
     }
 
-    private void showImage() {
+    private static final int PERMISSION_REQUEST_CODE = 100;
+    private static final int PICK_IMAGE_REQUEST = 1;
+
+    private void requestPermissionAndOpenGallery() {
+        if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, PERMISSION_REQUEST_CODE);
+        } else {
+            openGallery();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                openGallery();
+            } else {
+                // Handle the case where the permission was denied
+                Toast.makeText(getContext(), "Permission denied to read external storage", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+
+    private void openGallery() {
+        Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+        startActivityForResult(intent, PICK_IMAGE_REQUEST);
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            Uri imageUri = data.getData();
+            String imagePath = getPathFromUri(imageUri);
+            showImage(imagePath);
+        }
+    }
+
+    private String getPathFromUri(Uri uri) {
+        String[] projection = {MediaStore.Images.Media.DATA};
+        Cursor cursor = getContext().getContentResolver().query(uri, projection, null, null, null);
+        if (cursor != null) {
+            cursor.moveToFirst();
+            int columnIndex = cursor.getColumnIndex(projection[0]);
+            String path = cursor.getString(columnIndex);
+            cursor.close();
+            return path;
+        }
+        return null;
+    }
+
+    private void showImage(String imagePath) {
         disableMedia();
 
-        String imagePath = "http://connectsdk.com/ConnectSDK.jpg";
-        String mimeType = "image/jpeg";
-        String title = "Connect SDK";
-        String description = "One SDK Eight Media Platforms";
-        String icon = "http://connectsdk.com/ConnectSDK_Logo.jpg";
+//        String imagePath = "http://connectsdk.com/ConnectSDK.jpg";
+//        String mimeType = "image/jpeg";
+//        String title = "Connect SDK";
+//        String description = "One SDK Eight Media Platforms";
+//        String icon = "https://connectsdk.com/en/latest/_static/logo.png";
+//
+//        MediaInfo mediaInfo = new MediaInfo.Builder(imagePath, mimeType)
+//                .setTitle(title)
+//                .setDescription(description)
+//                .setIcon(icon)
+//                .build();
 
-        MediaInfo mediaInfo = new MediaInfo.Builder(imagePath, mimeType)
-                .setTitle(title)
-                .setDescription(description)
-                .setIcon(icon)
-                .build();
+        String mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(MimeTypeMap.getFileExtensionFromUrl(imagePath));
 
-        getMediaPlayer().displayImage(mediaInfo, new MediaPlayer.LaunchListener() {
+
+        getMediaPlayer().displayImage(imagePath, mimeType, "Selected Image", "Image from gallery", null, new MediaPlayer.LaunchListener() {
 
             @Override
             public void onError(ServiceCommandError error) {
